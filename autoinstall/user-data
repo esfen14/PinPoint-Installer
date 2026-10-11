@@ -7,7 +7,7 @@ autoinstall:
     - keyboard
     - timezone
     - network
-    - mirror
+    - apt
     - storage
     - identity
 

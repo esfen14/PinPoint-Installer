@@ -13,6 +13,9 @@
 
 set -e
 
+# Resolved now: step 2 changes directory, and $0 may be relative.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 LOG="/var/log/pinpoint-configure.log"
 
 NAGIOS_BIND="127.0.0.1:8081"
@@ -114,6 +117,9 @@ if ! grep -qx "cfg_file=$NAGIOS_HOST_CFG" "$NAGIOS_CFG"; then
 fi
 
 echo "✓ nagios.cfg loads $NAGIOS_HOST_CFG." | tee -a "$LOG"
+
+# check_interval is in minutes only when interval_length is 60.
+bash "$SCRIPT_DIR/ensure-nagios-interval.sh"
 
 ##################################################
 # [3/8] Install Apache Configuration

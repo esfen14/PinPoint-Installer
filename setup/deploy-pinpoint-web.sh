@@ -37,6 +37,9 @@
 
 set -e
 
+# Resolved now: this script changes directory later, and $0 may be relative.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 LOG="/var/log/pinpoint-web.log"
 
 REPO_URL="https://github.com/esfen14/Network-Diagnosis-System.git"
@@ -224,6 +227,57 @@ print("Database schema at", ", ".join(sorted(heads)))
 EOF
 }
 
+# Succeeds if SYSTEM_SETTINGS already has the Check_Interval
+# column (added by the app's check interval migration).
+db_has_check_interval_column() {
+    run_app_python >> "$LOG" 2>&1 <<'EOF'
+import sqlite3
+import sys
+
+con = sqlite3.connect("file:system.db?mode=ro", uri=True)
+try:
+    columns = {row[1] for row in con.execute("PRAGMA table_info(SYSTEM_SETTINGS)")}
+finally:
+    con.close()
+
+sys.exit(0 if "Check_Interval" in columns else 1)
+EOF
+}
+
+# Read-only. Fails unless SYSTEM_SETTINGS.Check_Interval exists
+# and every row holds a value PinPoint accepts. When the
+# column was added by this run (CHECK_INTERVAL_NEW=1), every
+# row must hold the default of 5 minutes. No rows is fine:
+# the app creates the settings row with 5 when it first needs it.
+db_check_interval_ok() {
+    run_app_python >> "$LOG" 2>&1 <<'EOF'
+import os
+import sqlite3
+
+ALLOWED = {1, 2, 5, 10, 15}
+
+con = sqlite3.connect("file:system.db?mode=ro", uri=True)
+try:
+    columns = {row[1] for row in con.execute("PRAGMA table_info(SYSTEM_SETTINGS)")}
+    if "Check_Interval" not in columns:
+        raise SystemExit("SYSTEM_SETTINGS has no Check_Interval column.")
+    values = [row[0] for row in con.execute("SELECT Check_Interval FROM SYSTEM_SETTINGS")]
+finally:
+    con.close()
+
+bad = sorted({v for v in values if v not in ALLOWED}, key=str)
+if bad:
+    raise SystemExit(f"Check_Interval holds unsupported values: {bad}.")
+
+if os.environ.get("CHECK_INTERVAL_NEW") == "1":
+    not_default = sorted({v for v in values if v != 5})
+    if not_default:
+        raise SystemExit(f"Rows were not defaulted to 5 minutes: {not_default}.")
+
+print("Check_Interval is valid on", len(values), "settings row(s).")
+EOF
+}
+
 # Restore the application from $BACKUP_DIR after a
 # failed upgrade. Runs from the EXIT trap.
 rollback_upgrade() {
@@ -333,6 +387,11 @@ if ! curl -fsS -o /dev/null --max-time 20 https://github.com; then
 fi
 
 echo "✓ Nagios, Apache and network are ready." | tee -a "$LOG"
+
+# check_interval is in minutes only when interval_length is 60.
+# Runs on upgrades too, before anything is changed.
+LOG="$LOG" bash "$SCRIPT_DIR/ensure-nagios-interval.sh" \
+    || fail "Nagios interval_length is not 60 and could not be fixed."
 
 ##################################################
 # [2/12] Install Web Packages
@@ -650,6 +709,7 @@ else
 fi
 
 NEW_ADMIN=0
+CHECK_INTERVAL_NEW=0
 
 if [ "$DB_EXISTS" = "1" ]; then
 
@@ -681,6 +741,14 @@ EOF
 
             echo "✓ Existing database marked as revision $BASE_REVISION." | tee -a "$LOG"
 
+        fi
+
+        # Rows that exist before the check interval column is
+        # added must come out of the migration holding 5.
+        if db_has_check_interval_column; then
+            CHECK_INTERVAL_NEW=0
+        else
+            CHECK_INTERVAL_NEW=1
         fi
 
         run_app_flask db upgrade >> "$LOG" 2>&1 \
@@ -777,6 +845,14 @@ if [ "$HAS_MIGRATIONS" = "1" ]; then
     db_at_head || fail "Database is not at the latest migration."
     echo "✓ Database schema is at the latest migration." | tee -a "$LOG"
 fi
+
+# The app's Nagios check interval setting is stored in
+# SYSTEM_SETTINGS.Check_Interval. Nothing is changed here;
+# a failure stops the install, or rolls back the upgrade.
+export CHECK_INTERVAL_NEW
+db_check_interval_ok \
+    || fail "Step 9/12: the Nagios check interval setting (SYSTEM_SETTINGS.Check_Interval) is missing or invalid after the database migration."
+echo "✓ Nagios check interval setting is present and valid." | tee -a "$LOG"
 
 ##################################################
 # [10/12] Configure Gunicorn

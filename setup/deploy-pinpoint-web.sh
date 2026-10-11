@@ -37,6 +37,9 @@
 
 set -e
 
+# Resolved now: this script changes directory later, and $0 may be relative.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 LOG="/var/log/pinpoint-web.log"
 
 REPO_URL="https://github.com/esfen14/Network-Diagnosis-System.git"
@@ -387,7 +390,8 @@ echo "✓ Nagios, Apache and network are ready." | tee -a "$LOG"
 
 # check_interval is in minutes only when interval_length is 60.
 # Runs on upgrades too, before anything is changed.
-LOG="$LOG" bash "$(dirname "$0")/ensure-nagios-interval.sh" \n    || fail "Nagios interval_length is not 60 and could not be fixed."
+LOG="$LOG" bash "$SCRIPT_DIR/ensure-nagios-interval.sh" \
+    || fail "Nagios interval_length is not 60 and could not be fixed."
 
 ##################################################
 # [2/12] Install Web Packages

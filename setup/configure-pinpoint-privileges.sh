@@ -625,9 +625,17 @@ if ! runuser -u "$APP_USER" -- sudo -n -l /usr/bin/systemctl reload nagios > /de
     fail "$APP_USER cannot run 'sudo systemctl reload nagios'."
 fi
 
-if runuser -u "$APP_USER" -- sudo -n -l /usr/bin/systemctl restart nagios > /dev/null 2>&1; then
-    fail "$APP_USER has more sudo rights than 'systemctl reload nagios'."
+# PinPoint runs the unqualified "sudo -n systemctl reload nagios",
+# so sudo must also find the rule through its secure_path.
+if ! runuser -u "$APP_USER" -- sudo -n -l systemctl reload nagios > /dev/null 2>&1; then
+    fail "$APP_USER cannot run 'sudo -n systemctl reload nagios' as PinPoint runs it."
 fi
+
+for ACTION in restart stop start; do
+    if runuser -u "$APP_USER" -- sudo -n -l /usr/bin/systemctl "$ACTION" nagios > /dev/null 2>&1; then
+        fail "$APP_USER has more sudo rights than 'systemctl reload nagios' ($ACTION is allowed)."
+    fi
+done
 
 echo "✓ $APP_USER can reload Nagios and nothing else through sudo." | tee -a "$LOG"
 

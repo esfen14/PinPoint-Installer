@@ -80,6 +80,14 @@ Nginx :80
                                                +-> Nagios 127.0.0.1:8081
 ```
 
+## Check interval
+
+PinPoint lets an administrator choose how often Nagios checks devices (1, 2, 5, 10 or 15
+minutes). The installer makes sure Nagios counts in minutes (`interval_length=60`), that
+PinPoint may reload Nagios but not restart it, and that the database has the setting after an
+upgrade. See [docs/Check-Interval.md](docs/Check-Interval.md) for what each interval means and
+how to check a server.
+
 ## Updating Network-Diagnosis-System
 
 To update the PinPoint web interface on an installed server, run the deploy

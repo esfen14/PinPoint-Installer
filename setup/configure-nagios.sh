@@ -115,6 +115,9 @@ fi
 
 echo "✓ nagios.cfg loads $NAGIOS_HOST_CFG." | tee -a "$LOG"
 
+# check_interval is in minutes only when interval_length is 60.
+bash "$(dirname "$0")/ensure-nagios-interval.sh"
+
 ##################################################
 # [3/8] Install Apache Configuration
 ##################################################

@@ -334,6 +334,10 @@ fi
 
 echo "✓ Nagios, Apache and network are ready." | tee -a "$LOG"
 
+# check_interval is in minutes only when interval_length is 60.
+# Runs on upgrades too, before anything is changed.
+LOG="$LOG" bash "$(dirname "$0")/ensure-nagios-interval.sh" \n    || fail "Nagios interval_length is not 60 and could not be fixed."
+
 ##################################################
 # [2/12] Install Web Packages
 ##################################################

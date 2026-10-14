@@ -69,7 +69,7 @@ def validate_block(block, outside):
         if key in keys or slot in metadata or not 2 <= slot <= 256: raise Rejected()
         keys.add(key); metadata.add(slot)
     if not metadata <= slots: raise Rejected()
-    reserved = {int(value) for value in re.findall(r'^\s*\$USER([0-9]+)\$=', outside, re.M)}
+    reserved = {int(value) for value in re.findall(r'^\s*\$USER([0-9]+)\$\s*=', outside, re.M)}
     if slots & reserved: raise Rejected()
 
 
@@ -92,6 +92,7 @@ def apply(request):
         if outside_digest(before, after) != request['outside_digest']: raise Rejected()
         validate_block(request['block'], before + after)
         if before and not before.endswith('\n') and request['block'] is not None: raise Rejected()
+        if after and request['block'] is not None and not request['block'].endswith('\n'): raise Rejected()
         contents = (before + (request['block'] or '') + after).encode()
         if len(contents) > MAX_BYTES: raise Rejected()
         if contents == data: return

@@ -67,6 +67,15 @@ class ResourceHelperTest(unittest.TestCase):
         self.config.chmod(0o664)
         with self.assertRaises(self.helper.Rejected): self.helper.apply(self.payload())
 
+    def test_external_slot_with_whitespace_around_assignment_is_reserved(self):
+        self.config.write_text(self.outside + '$USER2$ = external\n')
+        with self.assertRaises(self.helper.Rejected): self.helper.apply(self.payload())
+
+    def test_block_without_final_newline_cannot_join_external_footer(self):
+        self.config.write_text(self.outside + self.block + '# footer\n')
+        with self.assertRaises(self.helper.Rejected):
+            self.helper.apply(self.payload(self.block.rstrip('\n')))
+
     def test_replace_failure_keeps_original_and_removes_private_stage(self):
         with patch.object(self.helper.os, 'replace', side_effect=OSError('synthetic failure')):
             with self.assertRaises(OSError): self.helper.apply(self.payload())

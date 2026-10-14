@@ -30,7 +30,10 @@ python3 -m unittest discover -s tests -p test_resource_helper.py
 bash -n setup/configure-pinpoint-privileges.sh scripts/build.sh
 ```
 
-This branch is not installed on the appliance. Application invocation,
-installed service-user update/rollback and packaging/live verification remain
-required before deployment. Custom resource paths are unsupported by this fixed
+The helper from commit 15c27d1 is installed on the existing QA appliance with
+its exact sudo grant. The application client passed writes, external/metadata
+preservation, validation and byte-exact rollback as pinpoint. Packaging script
+syntax passes; a complete ISO build and full generated-config live apply/reload
+remain unverified. Both repositories require their paired changes on production
+upgrade. Custom resource paths are unsupported by this fixed
 helper and must fail safely rather than updating a different file.

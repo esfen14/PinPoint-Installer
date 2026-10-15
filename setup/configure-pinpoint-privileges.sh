@@ -8,8 +8,9 @@
 #            - nmap raw-socket scans (Discovery)
 #            - write access to the Nagios host and
 #              plugin service configs it generates
-#            - "systemctl reload nagios" via sudo,
-#              and nothing else
+#            - "systemctl reload nagios" via sudo, and
+#              "systemctl restart" of the units listed in
+#              RESTARTABLE_UNITS, and nothing else
 #            - an SSH key for NCPA agent deployment
 #            - a send-only mail transport (msmtp) so
 #              Nagios notifications can leave the
@@ -65,6 +66,13 @@ NAGIOS_CFG_BACKUP="$NAGIOS_CFG.before-pinpoint"
 NAGIOS_HOST_CFG="/usr/local/nagios/etc/objects/hosts.cfg"
 PLUGIN_SERVICE_CFG="/usr/local/nagios/etc/objects/plugin-services.cfg"
 SUDOERS_FILE="/etc/sudoers.d/pinpoint-nagios-reload"
+
+# Units PinPoint's restart_local_service action may restart
+# (RESTARTABLE_UNITS in server/app/remediation_actions.py).
+# Change both lists together. Never add pinpoint-gunicorn:
+# restarting it would kill the process running the restart.
+RESTARTABLE_UNITS=(nagios)
+RESTART_SUDOERS_FILE="/etc/sudoers.d/pinpoint-restart"
 
 # Key the application reads from ~/.ssh to deploy NCPA
 # (ncpa_deployment.py).
@@ -316,6 +324,29 @@ install -m 440 -o root -g root "$SUDOERS_TMP" "$SUDOERS_FILE"
 rm -f "$SUDOERS_TMP"
 
 echo "✓ $APP_USER may run 'systemctl reload nagios' only." | tee -a "$LOG"
+
+# One full command line per unit: no wildcards, no shell. The
+# file is validated under a temporary name and only then moved
+# into place, so a failed run keeps the previous rule.
+RESTART_SUDOERS_TMP="$(mktemp)"
+
+{
+    echo "# Managed by PinPoint Installer."
+    echo "# Lets PinPoint restart the listed services for proactive resolution."
+    for UNIT in "${RESTARTABLE_UNITS[@]}"; do
+        echo "$APP_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart $UNIT"
+    done
+} > "$RESTART_SUDOERS_TMP"
+
+if ! visudo -cf "$RESTART_SUDOERS_TMP" >> "$LOG" 2>&1; then
+    rm -f "$RESTART_SUDOERS_TMP"
+    fail "Generated restart sudoers rule is invalid."
+fi
+
+install -m 440 -o root -g root "$RESTART_SUDOERS_TMP" "$RESTART_SUDOERS_FILE"
+rm -f "$RESTART_SUDOERS_TMP"
+
+echo "✓ $APP_USER may restart: ${RESTARTABLE_UNITS[*]}." | tee -a "$LOG"
 
 ##################################################
 # [7/9] Create NCPA Deployment Key
@@ -631,13 +662,28 @@ if ! runuser -u "$APP_USER" -- sudo -n -l systemctl reload nagios > /dev/null 2>
     fail "$APP_USER cannot run 'sudo -n systemctl reload nagios' as PinPoint runs it."
 fi
 
-for ACTION in restart stop start; do
-    if runuser -u "$APP_USER" -- sudo -n -l /usr/bin/systemctl "$ACTION" nagios > /dev/null 2>&1; then
-        fail "$APP_USER has more sudo rights than 'systemctl reload nagios' ($ACTION is allowed)."
+for UNIT in "${RESTARTABLE_UNITS[@]}"; do
+    if ! runuser -u "$APP_USER" -- sudo -n -l /usr/bin/systemctl restart "$UNIT" > /dev/null 2>&1; then
+        fail "$APP_USER cannot run 'sudo -n systemctl restart $UNIT'."
     fi
 done
 
-echo "✓ $APP_USER can reload Nagios and nothing else through sudo." | tee -a "$LOG"
+for ACTION in stop start; do
+    if runuser -u "$APP_USER" -- sudo -n -l /usr/bin/systemctl "$ACTION" nagios > /dev/null 2>&1; then
+        fail "$APP_USER has more sudo rights than reload and restart of nagios ($ACTION is allowed)."
+    fi
+done
+
+# Units outside the list, and extra arguments, must stay refused.
+if runuser -u "$APP_USER" -- sudo -n -l /usr/bin/systemctl restart sshd > /dev/null 2>&1; then
+    fail "$APP_USER may restart units outside RESTARTABLE_UNITS (sshd is allowed)."
+fi
+
+if runuser -u "$APP_USER" -- sudo -n -l /usr/bin/systemctl restart nagios extra > /dev/null 2>&1; then
+    fail "$APP_USER may pass extra arguments to 'systemctl restart nagios'."
+fi
+
+echo "✓ $APP_USER can reload and restart Nagios and nothing else through sudo." | tee -a "$LOG"
 
 # Mail transport: Nagios must find "mail", read the msmtp
 # settings, and be the only account besides root that can.

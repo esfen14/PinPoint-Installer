@@ -292,22 +292,22 @@ check 2.1 "reload rule found" runuser -u pinpoint -- sudo -n -l /usr/bin/systemc
 check 2.1b "reload rule found in the form PinPoint runs it" runuser -u pinpoint -- sudo -n -l systemctl reload nagios
 
 REFUSED=""
-for ACTION in restart stop start; do
+for ACTION in stop start; do
     if runuser -u pinpoint -- sudo -n -l /usr/bin/systemctl "$ACTION" nagios > /dev/null 2>&1; then
         REFUSED="$REFUSED $ACTION"
     fi
 done
 
 if [ -z "$REFUSED" ]; then
-    record 2.2 PASS "restart, stop and start are refused"
+    record 2.2 PASS "stop and start are refused"
 else
     record 2.2 FAIL "allowed:$REFUSED"
 fi
 
 SUDO_LIST="$(runuser -u pinpoint -- sudo -n -l 2> /dev/null | grep -E '^\s+\(' )"
-EXTRA="$(echo "$SUDO_LIST" | grep -v -E 'systemctl reload nagios|pinpoint-apply-smtp' | tr '\n' ' ')"
+EXTRA="$(echo "$SUDO_LIST" | grep -v -E 'systemctl reload nagios|systemctl restart nagios|pinpoint-apply-smtp' | tr '\n' ' ')"
 if [ -z "$EXTRA" ]; then
-    record 2.3 PASS "only the reload rule and the SMTP helper rule"
+    record 2.3 PASS "only the reload and restart rules and the SMTP helper rule"
 else
     record 2.3 FAIL "extra rights: $EXTRA"
 fi

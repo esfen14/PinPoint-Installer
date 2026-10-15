@@ -20,7 +20,7 @@ VM runners (`restart-sudoers-tests.sh`, `event-handler-tests.sh`, `journald-log-
 |---|---|
 | Date | 2026-10-15 |
 | Host | Windows 11, Git Bash, shellcheck from `shellcheck-py` |
-| Code tested | `main` (restart rule merged), `feat/event-spool-handler` (`cbfa075`), `feat/journald-log-limits` (`06ecc97` plus the logrotate directory fix) |
+| Code tested | First `feat/event-spool-handler` (`cbfa075`) and `feat/journald-log-limits` (`06ecc97` plus the logrotate directory fix) on their own branches; then re-run on `main` after all three were merged (31 of 31 again) |
 
 ## Sandbox dry-run
 
@@ -80,8 +80,8 @@ after the fix.
 - journald actually applying the limit, `journalctl --disk-usage`, a forced `logrotate -f`.
 - `runuser ... test -w` is stubbed to "not writable" in the sandbox, so case E9 / the handler
   write-protection check is only proved on the VM.
-- Fresh ISO install and upgrade of an existing appliance. The three feature branches also conflict when
+- Fresh ISO install and upgrade of an existing appliance. The three feature branches conflicted when
   merged together (`firstboot/pinpoint-firstboot.sh`, `setup/pinpoint-setup.sh`, `docs/Release-Notes.md`);
-  the step numbering must be fixed once when they are merged.
+  this is resolved: first boot now has 9 steps and `pinpoint-setup.sh` lists both modules.
 - Whether the deployed PinPoint contains `server/scripts/pinpoint_event_handler.py` and
   `RESTARTABLE_UNITS = ["nagios"]`.

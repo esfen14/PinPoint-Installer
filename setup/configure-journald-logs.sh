@@ -118,6 +118,8 @@ if ! command -v logrotate > /dev/null 2>&1; then
     apt-get install -y logrotate >> "$LOG" 2>&1 || fail "Could not install logrotate."
 fi
 
+mkdir -p "$(dirname "$LOGROTATE_FILE")"
+
 LOGROTATE_TMP="$(mktemp)"
 
 # copytruncate: the installer scripts append to these files with

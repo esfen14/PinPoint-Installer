@@ -72,6 +72,7 @@ case "$OPTION" in
         "configure-nagios.sh"
         "deploy-pinpoint-web.sh"
         "configure-pinpoint-privileges.sh"
+        "configure-event-handler.sh"
     )
 
     TOTAL=${#MODULES[@]}

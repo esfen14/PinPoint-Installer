@@ -15,3 +15,8 @@
   handler as `/usr/local/sbin/pinpoint-event-handler` (`root:root`, `755`) from the deployed
   PinPoint (`server/scripts/pinpoint_event_handler.py`). Safe to run again on an existing
   appliance. If the deployed PinPoint has no handler, only the spool is created and a warning is logged.
+
+- New installer module `configure-journald-logs.sh`: limits the systemd journal to 200M and 30 days
+  (`/etc/systemd/journald.conf.d/pinpoint.conf`) and rotates `/var/log/pinpoint-*.log` weekly, 8 kept
+  (`/etc/logrotate.d/pinpoint`). A file an administrator edited (its first line no longer reads
+  "Managed by PinPoint Installer.") is never overwritten.

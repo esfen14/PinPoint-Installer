@@ -114,10 +114,15 @@ else
     record E11 PASS "event handlers are not disabled"
 fi
 
-if grep -Eq '^[[:space:]]*illegal_macro_output_chars' "$NAGIOS_CFG"; then
-    record E12 FAIL "illegal_macro_output_chars is overridden"
-else
+# Stock Nagios sets this to `~$&|'"<>. It is "left at the default" when the
+# line is absent or still has that value.
+MACRO_LINE="$(grep -E '^[[:space:]]*illegal_macro_output_chars' "$NAGIOS_CFG" | head -n 1)"
+MACRO_DEFAULT="illegal_macro_output_chars=\`~\$&|'\"<>"
+
+if [ -z "$MACRO_LINE" ] || [ "$MACRO_LINE" = "$MACRO_DEFAULT" ]; then
     record E12 PASS "illegal_macro_output_chars left at the default"
+else
+    record E12 FAIL "illegal_macro_output_chars is overridden: $MACRO_LINE"
 fi
 
 # Running the module again must keep owners and modes.

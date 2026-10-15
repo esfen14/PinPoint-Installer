@@ -65,10 +65,10 @@ else
     record J4 FAIL "$LOGROTATE missing or invalid"
 fi
 
-if grep -q '/var/log/pinpoint-\*.log' "$LOGROTATE" 2> /dev/null; then
-    record J5 PASS "rule covers /var/log/pinpoint-*.log"
+if grep -q '/var/log/pinpoint-\*.log' "$LOGROTATE" 2> /dev/null     && grep -qx '    su root root' "$LOGROTATE"; then
+    record J5 PASS "rule covers /var/log/pinpoint-*.log and has 'su root root'"
 else
-    record J5 FAIL "rule does not cover the installer logs"
+    record J5 FAIL "rule does not cover the installer logs or lacks 'su root root'"
 fi
 
 if bash "$SCRIPT" > /dev/null 2>&1; then

@@ -122,11 +122,13 @@ mkdir -p "$(dirname "$LOGROTATE_FILE")"
 
 LOGROTATE_TMP="$(mktemp)"
 
-# copytruncate: the installer scripts append to these files with
+# su root root: /var/log is group-writable on Ubuntu, and logrotate
+# skips the files without it. copytruncate: the installer scripts append to these files with
 # "tee -a" and never reopen them.
 cat > "$LOGROTATE_TMP" <<EOT
 $MANAGED_MARK
 /var/log/pinpoint-*.log {
+    su root root
     weekly
     rotate 8
     maxsize 20M

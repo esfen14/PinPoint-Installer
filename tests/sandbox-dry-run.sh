@@ -9,7 +9,7 @@
 #          non-root user, and changes nothing outside
 #          that folder.
 #
-# It reads the scripts from git (main), not from the working
+# It reads the scripts from git (main, or $REF), not from the working
 # tree.
 #
 # It cannot check real owners, modes, sudo, visudo or
@@ -90,11 +90,11 @@ chk A6 'grep -q "FAILED: Generated restart sudoers rule is invalid." "$SB/log.tx
 echo "## B. configure-journald-logs.sh"
 new_sandbox B
 mkdir -p "$SB/log" "$SB/etc"
-git -C "$REPO" show main:setup/configure-journald-logs.sh > "$SB/orig.sh"
+git -C "$REPO" show "${REF:-main}":setup/configure-journald-logs.sh > "$SB/orig.sh"
 patch_script "$SB/orig.sh" "$SB/mod.sh"
 cat > "$SB/bin/logrotate" <<'EOF'
 #!/bin/bash
-[ "$1" = -d ] && grep -q '^/var/log/pinpoint-\*\.log {' "$2" && grep -q '^}' "$2"
+[ "$1" = -d ] && grep -qx "    su root root" "$2" && grep -q '^/var/log/pinpoint-\*\.log {' "$2" && grep -q '^}' "$2"
 EOF
 bash "$SB/mod.sh" > "$SB/out1.txt" 2>&1; RC=$?
 chk B1 '[ $RC = 0 ]' "fresh run exits 0"
@@ -123,7 +123,7 @@ new_sandbox C
 APPSCRIPTS="$SB/opt/pinpoint/Network-Diagnosis-System/server/scripts"
 mkdir -p "$SB/log" "$SB/usr/local/nagios/etc" "$APPSCRIPTS" "$SB/usr/local/sbin"
 echo "log_file=x" > "$SB/usr/local/nagios/etc/nagios.cfg"
-git -C "$REPO" show main:setup/configure-event-handler.sh > "$SB/orig.sh"
+git -C "$REPO" show "${REF:-main}":setup/configure-event-handler.sh > "$SB/orig.sh"
 patch_script "$SB/orig.sh" "$SB/mod.sh"
 bash "$SB/mod.sh" > "$SB/out1.txt" 2>&1; RC=$?
 chk C1 '[ $RC = 0 ]' "run without a handler in the app exits 0"

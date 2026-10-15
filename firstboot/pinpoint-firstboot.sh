@@ -10,26 +10,29 @@ echo "==================================" | tee -a "$LOG"
 
 echo "Starting PinPoint installation..." | tee -a "$LOG"
 
-echo "[1/7] Installing required packages..." | tee -a "$LOG"
+echo "[1/8] Installing required packages..." | tee -a "$LOG"
 /root/pinpoint/install-packages.sh
 
-echo "[2/7] Installing Nagios Core..." | tee -a "$LOG"
+echo "[2/8] Installing Nagios Core..." | tee -a "$LOG"
 /root/pinpoint/install-nagios-core.sh
 
-echo "[3/7] Installing Nagios Plugins..." | tee -a "$LOG"
+echo "[3/8] Installing Nagios Plugins..." | tee -a "$LOG"
 /root/pinpoint/install-nagios-plugins.sh
 
-echo "[4/7] Configuring SNMP..." | tee -a "$LOG"
+echo "[4/8] Configuring SNMP..." | tee -a "$LOG"
 /root/pinpoint/configure-snmp.sh
 
-echo "[5/7] Configuring Nagios..." | tee -a "$LOG"
+echo "[5/8] Configuring Nagios..." | tee -a "$LOG"
 /root/pinpoint/configure-nagios.sh
 
-echo "[6/7] Deploying PinPoint web interface..." | tee -a "$LOG"
+echo "[6/8] Deploying PinPoint web interface..." | tee -a "$LOG"
 /root/pinpoint/deploy-pinpoint-web.sh
 
-echo "[7/7] Configuring PinPoint privileges..." | tee -a "$LOG"
+echo "[7/8] Configuring PinPoint privileges..." | tee -a "$LOG"
 /root/pinpoint/configure-pinpoint-privileges.sh
+
+echo "[8/8] Configuring log limits..." | tee -a "$LOG"
+/root/pinpoint/configure-journald-logs.sh
 
 echo "PinPoint installation completed successfully." | tee -a "$LOG"
 echo "Web administrator credentials will be shown at the next login." | tee -a "$LOG"

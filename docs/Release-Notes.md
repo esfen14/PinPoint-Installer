@@ -9,3 +9,8 @@
   `visudo -cf` before it is moved into place; if validation fails, the previous rule is kept and the
   install stops with an error. The unit list (`RESTARTABLE_UNITS`) must match
   `server/app/remediation_actions.py`.
+
+- New installer module `configure-journald-logs.sh`: limits the systemd journal to 200M and 30 days
+  (`/etc/systemd/journald.conf.d/pinpoint.conf`) and rotates `/var/log/pinpoint-*.log` weekly, 8 kept
+  (`/etc/logrotate.d/pinpoint`). A file an administrator edited (its first line no longer reads
+  "Managed by PinPoint Installer.") is never overwritten.

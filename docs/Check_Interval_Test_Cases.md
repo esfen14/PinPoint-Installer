@@ -12,7 +12,7 @@ Status of every case: **not run** unless a result is written in the Result colum
 | Area | Guarantee |
 |---|---|
 | Nagios timing | `interval_length` is 60, so `check_interval 2` means two minutes. |
-| Permissions | `pinpoint` can validate the config and `sudo -n systemctl reload nagios`, and cannot restart. |
+| Permissions | `pinpoint` can validate the config and `sudo -n systemctl reload nagios`, and cannot stop or start it (restart is allowed by the proactive resolution rule). |
 | Schema | After the app migration `SYSTEM_SETTINGS.Check_Interval` exists and upgraded rows hold 5. |
 | Documentation | The four different "intervals" are explained and `localhost.cfg` is stated as unaffected. |
 
@@ -74,21 +74,21 @@ extracted block. Case 1.11 is the one that proves the upgrade path.
 
 ## 2. Permissions (`fix/verify-reload-privileges`)
 
-`configure-pinpoint-privileges.sh` already checks reload allowed and restart refused, and that
+`configure-pinpoint-privileges.sh` already checks reload and restart allowed and stop and start refused, and that
 `pinpoint` can run `nagios -v`. These cases are mostly regression checks; add a script check only
 where a case fails or a check is missing.
 
 | ID | Case | Steps | Expected | Result |
 |---|---|---|---|---|
 | 2.1 | Reload rule exists | `runuser -u pinpoint -- sudo -n -l /usr/bin/systemctl reload nagios` | Exit 0 (the rule is listed). | |
-| 2.2 | Restart is refused | `runuser -u pinpoint -- sudo -n -l /usr/bin/systemctl restart nagios` | Non-zero. | |
+| 2.2 | Stop and start are refused | `runuser -u pinpoint -- sudo -n -l /usr/bin/systemctl stop nagios` (and `start`) | Non-zero for both. | |
 | 2.3 | No other sudo rights | `runuser -u pinpoint -- sudo -n -l` | Lists only the reload rule and the SMTP helper rule. | |
 | 2.4 | Sudoers valid | `visudo -c` | `parsed OK` for every file under `/etc/sudoers.d`. | |
 | 2.5 | Config validation as `pinpoint` | `runuser -u pinpoint -- /usr/local/nagios/bin/nagios -v "$NAGIOS_CFG"` | 0 errors. | |
 | 2.6 | Config files writable | `runuser -u pinpoint -- test -w` on `hosts.cfg` and the plugin services cfg | Exit 0 for both. | |
 | 2.7 | No reload during the check | Note the Nagios `ActiveEnterTimestamp` and `ExecReload` count before and after running the script | Unchanged. The script must not reload Nagios. | |
 | 2.8 | Script is idempotent | Run `configure-pinpoint-privileges.sh` twice | Both exit 0. No duplicate sudoers lines. | |
-| 2.9 | A broken rule is detected | Temporarily add `restart nagios` to the reload rule, run the script | Fails with `more sudo rights than 'systemctl reload nagios'`. Restore the file afterwards. | |
+| 2.9 | A broken rule is detected | Temporarily add `stop nagios` to the reload rule, run the script | Fails with `more sudo rights than reload and restart of nagios`. Restore the file afterwards. | |
 | 2.10 | Reload really works | As `pinpoint`, `sudo -n systemctl reload nagios` once, then check `systemctl status nagios` | Reload accepted, service still active. Do this by hand only, never inside the script. | |
 | 2.11 | Command matches the app | Compare the app's reload command (Pinpoint `create_host_cfg`) with the sudoers rule path | Same binary path and arguments. If the app calls a different path (`/bin` vs `/usr/bin`), the rule covers both. | |
 

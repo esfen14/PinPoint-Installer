@@ -64,15 +64,16 @@ The installer makes sure it is 60, on a new install and on every upgrade:
 This is done by `setup/ensure-nagios-interval.sh`, which both `configure-nagios.sh` (install) and
 `deploy-pinpoint-web.sh` (install and upgrade) run.
 
-### 2. PinPoint may reload Nagios, and nothing else
+### 2. PinPoint may reload or restart Nagios, and nothing else
 
-The `pinpoint` service account can run exactly one privileged command on Nagios:
-`sudo -n systemctl reload nagios`. It can also validate a configuration with `nagios -v` and replace the
-PinPoint-generated config files.
+The `pinpoint` service account can run exactly two privileged commands on Nagios:
+`sudo -n systemctl reload nagios` and `sudo -n systemctl restart nagios`. The second is used by
+proactive resolution and comes from `/etc/sudoers.d/pinpoint-restart`. It can also validate a
+configuration with `nagios -v` and replace the PinPoint-generated config files.
 
-It cannot restart, stop or start Nagios. PinPoint validates every new configuration with `nagios -v`
-before it asks for a reload, and puts its backup back if validation or the reload fails. Reload is the
-only power it needs, so a mistake cannot stop the service. `configure-pinpoint-privileges.sh` checks all of this
+It cannot stop or start Nagios, and it cannot restart any other service. PinPoint validates every new
+configuration with `nagios -v` before it asks for a reload, and puts its backup back if validation or
+the reload fails. Configuration changes only need reload, so a mistake there cannot stop the service. `configure-pinpoint-privileges.sh` checks all of this
 during install, without reloading Nagios, and stops with an error if `pinpoint` has any extra rights over
 Nagios. It rewrites its own sudoers file (`/etc/sudoers.d/pinpoint-nagios-reload`) every time it runs, so
 a hand edit to that one file is repaired silently. A rule added in a different file is reported as an
@@ -99,7 +100,8 @@ Run these on the PinPoint server.
 | Nagios counts in minutes | `grep -E '^interval_length' /usr/local/nagios/etc/nagios.cfg` | `interval_length=60` (or no line) |
 | Config is valid | `sudo /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg` | 0 errors |
 | PinPoint can reload | `sudo -u pinpoint sudo -n -l systemctl reload nagios` | Prints the command |
-| PinPoint cannot restart | `sudo -u pinpoint sudo -n -l systemctl restart nagios` | Refused (non-zero exit) |
+| PinPoint can restart Nagios only | `sudo -u pinpoint sudo -n -l systemctl restart nagios`, then the same with `sshd` | First prints the command, second refused |
+| PinPoint cannot stop | `sudo -u pinpoint sudo -n -l systemctl stop nagios` | Refused (non-zero exit) |
 | Installer logs | `/var/log/pinpoint-configure.log`, `/var/log/pinpoint-web.log`, `/var/log/pinpoint-privileges.log` | Lines starting with `✓` |
 
 ## Troubleshooting

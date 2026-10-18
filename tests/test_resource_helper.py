@@ -76,6 +76,33 @@ class ResourceHelperTest(unittest.TestCase):
         with self.assertRaises(self.helper.Rejected):
             self.helper.apply(self.payload(self.block.rstrip('\n')))
 
+    def test_symlink_destination_is_refused_without_changing_target(self):
+        target = self.config.with_name('target.cfg')
+        target.write_text(self.outside)
+        target.chmod(0o660)
+        self.config.unlink()
+        self.config.symlink_to(target)
+        with self.assertRaises(OSError):
+            self.helper.apply(self.payload())
+        self.assertEqual(target.read_text(), self.outside)
+
+    def test_wrong_owner_and_duplicate_markers_are_refused(self):
+        with patch.object(self.helper.pwd, 'getpwnam',
+                          return_value=SimpleNamespace(pw_uid=os.getuid() + 1)):
+            with self.assertRaises(self.helper.Rejected):
+                self.helper.apply(self.payload())
+        self.config.write_text(self.outside + self.block + self.block)
+        with self.assertRaises(self.helper.Rejected):
+            self.helper.apply({'resource_path': str(self.config),
+                               'outside_digest': '0' * 64, 'block': None})
+
+    def test_unknown_request_fields_are_refused(self):
+        request = self.payload()
+        request['owner'] = 'root'
+        with self.assertRaises(self.helper.Rejected):
+            self.helper.apply(request)
+        self.assertEqual(self.config.read_text(), self.outside)
+
     def test_replace_failure_keeps_original_and_removes_private_stage(self):
         with patch.object(self.helper.os, 'replace', side_effect=OSError('synthetic failure')):
             with self.assertRaises(OSError): self.helper.apply(self.payload())

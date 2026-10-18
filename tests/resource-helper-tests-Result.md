@@ -6,7 +6,15 @@ Pinpoint appliance. User authorized investigation, tests and a fork/PR.
 
 ## Versions and scope
 
-- Target installer: `esfen14/PinPoint-Installer`, base `697869e01819c6e0925152d3033947567821f7de`.
+- Initial investigation used the user's linked fork at `697869e01819c6e0925152d3033947567821f7de`.
+- After the user corrected the repository, upstream `lorraine-pangilinan/PinPoint-Installer`
+  main `86381cea131c1ef5cc658cbe458393e04877c677` was fetched and inspected. It also
+  lacks the helper, sudoers installation and web-upgrade dependency step. This PR
+  is based on that current upstream main and preserves its newer unrelated changes.
+- The 14 isolated tests and shell syntax checks were rerun on the upstream-based
+  branch. The shared installer, Python helper and installed VM harness are byte-identical
+  to the versions already exercised on the real guest; the full upstream installer
+  was not rerun on the VM.
 - Reused restricted-writer implementation: upstream PR 7, through
   `b166953d2e7e5b4bae12bf723712224cc97fae94`, with the upgrade integration and tests
   in this PR. The user's fork already existed; no additional fork was created.

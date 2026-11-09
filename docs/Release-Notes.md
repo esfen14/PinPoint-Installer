@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Fix: the first-boot installer no longer runs again at every reboot. `getty-tty1.conf` makes
+  `getty@tty1` want `pinpoint-firstboot.service`, so the `systemctl disable` at the end of the first
+  boot did not stop it, and every reboot reinstalled packages, rebuilt Nagios, redeployed the web
+  app and restarted Nagios. `pinpoint-firstboot.sh` now writes `/var/lib/pinpoint/firstboot-done`
+  after the last module succeeds, and the unit has `ConditionPathExists=!/var/lib/pinpoint/firstboot-done`.
+  A failed install writes no marker and is still retried at the next boot. **Appliances installed
+  before this fix** need it once: `sudo bash /root/pinpoint/fix-firstboot-run-once.sh` (copy it from
+  `setup/` first on an older ISO). It writes the marker only if `/var/log/pinpoint-firstboot.log`
+  shows a completed install, adds the drop-in
+  `/etc/systemd/system/pinpoint-firstboot.service.d/run-once.conf`, and reloads systemd. Safe to run
+  again; no reboot needed. Tests: `tests/firstboot-run-once-tests.sh` (any machine); checked on a VM
+  by rebooting after the fix (`ConditionResult=no`, no new run in the first-boot log).
+
 - PinPoint can now restart `nagios` automatically (proactive resolution, `restart_local_service`).
   The installer adds `/etc/sudoers.d/pinpoint-restart` (`root:root`, `0440`) with one rule:
   `pinpoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart nagios`. No other unit, no wildcards, no

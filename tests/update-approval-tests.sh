@@ -87,6 +87,10 @@ con = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
 for row in con.execute(sys.argv[2]):
     print("|".join("" if v is None else str(v) for v in row))' "$DB" "$1"
 }
+# The checks below call sql inside "bash -c", which only sees
+# exported functions and variables.
+export DB
+export -f sql
 
 # make_manifest ID STATE: a copy of the baseline that upgrades from it.
 make_manifest() {
@@ -216,7 +220,7 @@ expect A22 "Admin declines with a reason" 0 pp-test-admin decline $T-1 --reason 
 
 make_manifest $T-3 verified
 expect A23 "Admin approves $T-3" 0 pp-test-admin approve $T-3 --confirm $T-3
-printf '{"schema_version": 1, "manifest_ids": ["$T-3"]}\n' > "$MANIFESTS/revoked.json"
+printf '{"schema_version": 1, "manifest_ids": ["%s"]}\n' "$T-3" > "$MANIFESTS/revoked.json"
 chmod 644 "$MANIFESTS/revoked.json"
 "$PROGRAM" status > /dev/null 2>&1
 check A24 "Revoking the manifest revokes the approval and cancels its transaction" \

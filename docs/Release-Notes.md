@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Validation and approval of Nagios updates (plan Phase 3). Nothing is installed yet, but admins can
+  now approve, defer or decline an update set from the command line. `sudo pinpoint-update` gains the
+  commands `list`, `show`, `validate`, `approve`, `defer`, `decline`, `cancel` and `history`, and
+  `audit --since`. Every command accepts `--json` (one `pinpoint-update/v1` object). Exit codes follow
+  plan §8.5. Manifests are read from `/etc/pinpoint/updates/manifests/`. They are **not signed**: a file
+  is trusted only if it and the folder are owned by root and writable by no one else. Its SHA-256 is
+  recorded the first time it is seen, and an edited file is refused. `revoked.json` in the same folder
+  revokes manifests. The compatibility gate refuses untested, incompatible, revoked and `major`
+  manifests, a wrong platform, an upgrade path that does not start at the installed manifest, and
+  Nagios versions changed outside the Update Manager. A `conditional` manifest needs
+  `--accept-limitations`. An approval is bound to the manifest digest, this host and the installed
+  state. It expires after 14 days, and is voided if any of those change, the manifest is revoked, or
+  its window passes. It creates a transaction in the `approved` state, which a later version will
+  run; until then a drill is refused while one waits (`pinpoint-update cancel TXN_ID`).
+  `configure-monitoring-updates.sh` now creates the groups `pinpoint-update-admins` (approve, defer,
+  decline, cancel) and `pinpoint-update-viewers` (read only), adds the members of `sudo` to the admin
+  group when the group is first created, and installs `/etc/sudoers.d/pinpoint-update`. The program
+  checks the caller's group itself and audits refusals. Audit rows are also copied to
+  `/var/log/pinpoint-update.log` and the journal (`journalctl -t pinpoint-update`), the chain cannot
+  fork, and `audit --verify` also finds missing rows. Tests: `tests/test_pinpoint_update_approval.py`
+  (any machine), `tests/update-approval-tests.sh` (VM).
+
 - Fix: the first-boot installer no longer runs again at every reboot. `getty-tty1.conf` makes
   `getty@tty1` want `pinpoint-firstboot.service`, so the `systemctl disable` at the end of the first
   boot did not stop it, and every reboot reinstalled packages, rebuilt Nagios, redeployed the web

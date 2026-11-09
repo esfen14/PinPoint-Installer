@@ -167,7 +167,7 @@ class ExecutorTest(unittest.TestCase):
 
     def test_invalid_transition_is_refused_and_changes_nothing(self):
         txn_id = self.txn()
-        with self.assertRaises(self.ex.InvalidTransition):
+        with self.assertRaises(self.pu.InvalidTransition):
             self.ex.transition(self.store, txn_id, 'succeeded')
         self.assertEqual(self.row(txn_id)[0], 'applying')
         self.assertIsNone(self.store.verify_audit())
@@ -292,6 +292,18 @@ class ExecutorTest(unittest.TestCase):
         self.ex.take_lock.side_effect = lambda: None
         self.assertEqual(self.drill(), self.ex.BUSY)
         self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM txn').fetchone()[0], 0)
+
+    def test_approved_update_waiting_refuses_the_drill_and_reconcile_leaves_it(self):
+        with self.store.db:
+            self.store.db.execute("INSERT INTO txn (txn_id, kind, host_id, source_manifest_id, target_manifest_id, "
+                                  "state, created_at) VALUES ('txn-a', 'update', 'test-host', 'a', 'b', 'approved', "
+                                  "'now')")
+        said = []
+        self.ex.say.side_effect = said.append
+        self.assertEqual(self.drill(), self.ex.BUSY)
+        self.assertIn('pinpoint-update cancel txn-a', said[-1])
+        self.assertEqual(self.ex.reconcile(self.store, 'now'), self.ex.OK)
+        self.assertEqual(self.row('txn-a')[0], 'approved')
 
     def test_drill_requires_confirmation_and_root(self):
         with patch.object(self.ex.os, 'geteuid', return_value=0, create=True):

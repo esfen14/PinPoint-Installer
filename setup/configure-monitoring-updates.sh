@@ -4,8 +4,9 @@
 # PinPoint Installer Module
 # Module : configure-monitoring-updates.sh
 # Purpose: Install the PinPoint Update Manager
-#          (read-only in this version), its
-#          recovery executor and health suite, and
+#          (approvals only; it installs no update
+#          yet), its recovery executor and health
+#          suite, its admin and viewer groups, and
 #          the baseline manifest, then record the
 #          installed Nagios versions.
 #
@@ -13,6 +14,8 @@
 #   /usr/local/sbin/pinpoint-update (root:root 755)
 #   /usr/local/sbin/pinpoint-update-exec (root:root 755)
 #   /usr/local/lib/pinpoint-update/ (health suite, root:root 755)
+#   groups pinpoint-update-admins and pinpoint-update-viewers
+#   /etc/sudoers.d/pinpoint-update (root:root 440)
 #   /etc/pinpoint/updates/manifests/ (root:root 755, files 644)
 #   /var/lib/pinpoint/updates/ (root:root 700, SQLite state)
 #   /usr/local/.pinpoint-rp/ (root:root 700, recovery points)
@@ -42,6 +45,9 @@ MANIFEST_DIR="/etc/pinpoint/updates/manifests"
 STATE_DIR="/var/lib/pinpoint/updates"
 RP_DIR="/usr/local/.pinpoint-rp"
 UNIT_DIR="/etc/systemd/system"
+SUDOERS_FILE="/etc/sudoers.d/pinpoint-update"
+ADMINS="pinpoint-update-admins"
+VIEWERS="pinpoint-update-viewers"
 CREDENTIALS_MARKER="/var/lib/pinpoint/web-credentials-pending"
 MENU_PENDING="/var/lib/pinpoint/update-menu-pending"
 
@@ -65,11 +71,11 @@ echo " Started: $(date)" | tee -a "$LOG"
 echo "======================================" | tee -a "$LOG"
 
 ##################################################
-# [1/6] Install the programs
+# [1/7] Install the programs
 ##################################################
 
 echo
-echo "[1/6] Installing pinpoint-update and pinpoint-update-exec..." | tee -a "$LOG"
+echo "[1/7] Installing pinpoint-update and pinpoint-update-exec..." | tee -a "$LOG"
 
 for SRC in "$PROGRAM_SRC" "$EXEC_SRC" "$SCRIPT_DIR/pinpoint-update-health.sh" "$SCRIPT_DIR/pinpoint-healthcheck.sh"; do
     [ -f "$SRC" ] || fail "Missing $SRC."
@@ -87,11 +93,53 @@ install -o root -g root -m 0755 "$SCRIPT_DIR/pinpoint-healthcheck.sh" "$LIB_DIR/
 echo "✓ $PROGRAM, $EXEC and the health suite installed." | tee -a "$LOG"
 
 ##################################################
-# [2/6] Install the baseline manifest
+# [2/7] Admin and viewer groups
 ##################################################
 
 echo
-echo "[2/6] Installing the baseline manifest..." | tee -a "$LOG"
+echo "[2/7] Setting up the update admin and viewer groups..." | tee -a "$LOG"
+
+# Sudo only lets these groups start the program; the program
+# itself decides what each role may do (approve, defer,
+# decline and cancel are for admins only).
+getent group "$VIEWERS" > /dev/null || groupadd --system "$VIEWERS" || fail "Could not create $VIEWERS."
+
+# The members of "sudo" become the first admins, only when the
+# group is created, so a later run never re-adds someone that
+# university IT removed (gpasswd -d USER pinpoint-update-admins).
+if ! getent group "$ADMINS" > /dev/null; then
+    groupadd --system "$ADMINS" || fail "Could not create $ADMINS."
+    for MEMBER in $(getent group sudo | cut -d: -f4 | tr ',' ' '); do
+        usermod -aG "$ADMINS" "$MEMBER" && echo "  $MEMBER added to $ADMINS." | tee -a "$LOG"
+    done
+fi
+
+SUDOERS_TMP="$(mktemp)"
+
+cat > "$SUDOERS_TMP" <<EOF
+# Managed by PinPoint Installer.
+# Lets update admins and viewers start the PinPoint Update Manager.
+# The program checks each caller's group before it changes anything.
+%$ADMINS ALL=(root) NOPASSWD: $PROGRAM, $PROGRAM *
+%$VIEWERS ALL=(root) NOPASSWD: $PROGRAM, $PROGRAM *
+EOF
+
+if ! visudo -cf "$SUDOERS_TMP" >> "$LOG" 2>&1; then
+    rm -f "$SUDOERS_TMP"
+    fail "Generated sudoers rule is invalid."
+fi
+
+install -m 440 -o root -g root "$SUDOERS_TMP" "$SUDOERS_FILE"
+rm -f "$SUDOERS_TMP"
+
+echo "✓ Update admins: $(getent group "$ADMINS" | cut -d: -f4 | tr ',' ' ')" | tee -a "$LOG"
+
+##################################################
+# [3/7] Install the baseline manifest
+##################################################
+
+echo
+echo "[3/7] Installing the baseline manifest..." | tee -a "$LOG"
 
 ls "$MANIFEST_SRC_DIR"/*.json >/dev/null 2>&1 || fail "No manifest found in $MANIFEST_SRC_DIR."
 install -d -o root -g root -m 0755 /etc/pinpoint/updates "$MANIFEST_DIR"
@@ -100,11 +148,11 @@ install -o root -g root -m 0644 "$MANIFEST_SRC_DIR"/*.json "$MANIFEST_DIR/"
 echo "✓ Manifest installed in $MANIFEST_DIR." | tee -a "$LOG"
 
 ##################################################
-# [3/6] Recovery point folder
+# [4/7] Recovery point folder
 ##################################################
 
 echo
-echo "[3/6] Creating the recovery point folder..." | tee -a "$LOG"
+echo "[4/7] Creating the recovery point folder..." | tee -a "$LOG"
 
 # Same filesystem as /usr/local/nagios, so a restore is a rename.
 install -d -o root -g root -m 0700 "$RP_DIR"
@@ -116,11 +164,11 @@ else
 fi
 
 ##################################################
-# [4/6] Record the installed versions
+# [5/7] Record the installed versions
 ##################################################
 
 echo
-echo "[4/6] Recording installed Nagios versions..." | tee -a "$LOG"
+echo "[5/7] Recording installed Nagios versions..." | tee -a "$LOG"
 
 install -d -o root -g root -m 0755 /var/lib/pinpoint
 install -d -o root -g root -m 0700 "$STATE_DIR"
@@ -130,11 +178,11 @@ install -d -o root -g root -m 0700 "$STATE_DIR"
 echo "✓ Inventory recorded in $STATE_DIR/updates.db." | tee -a "$LOG"
 
 ##################################################
-# [5/6] Reconcile at boot
+# [6/7] Reconcile at boot
 ##################################################
 
 echo
-echo "[5/6] Installing the boot-time reconcile services..." | tee -a "$LOG"
+echo "[6/7] Installing the boot-time reconcile services..." | tee -a "$LOG"
 
 # Two units, because a unit ordered before nagios.service cannot
 # start Nagios itself (it would wait for its own end). The first
@@ -177,11 +225,11 @@ systemctl enable pinpoint-update-reconcile.service pinpoint-update-reconcile-fin
 echo "✓ Reconcile services enabled." | tee -a "$LOG"
 
 ##################################################
-# [6/6] First console login (fresh install only)
+# [7/7] First console login (fresh install only)
 ##################################################
 
 echo
-echo "[6/6] Setting up the first-login menu..." | tee -a "$LOG"
+echo "[7/7] Setting up the first-login menu..." | tee -a "$LOG"
 
 if [ -f "$CREDENTIALS_MARKER" ]; then
     touch "$MENU_PENDING"

@@ -90,7 +90,7 @@ class UpdateManagerTest(unittest.TestCase):
                             write=lambda text='': out.write(text + '\n'))
         text = out.getvalue()
         self.assertEqual(code, 0)
-        self.assertEqual(text.count('Installing updates is not available'), 2)
+        self.assertEqual(text.count('Installing updates from this menu is not available'), 2)
         self.assertIn('Please enter 1, 2, 3 or 4.', text)
         self.assertIn('Update status: UNKNOWN', text)
         self.assertNotIn('up to date', text.lower())

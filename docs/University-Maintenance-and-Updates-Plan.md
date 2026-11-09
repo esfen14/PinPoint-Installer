@@ -12,6 +12,9 @@ How to read this document:
   into production.
 - Program names, paths and identifiers for new parts (`pinpoint-update`, `updates.db`, and so on) are
   proposed names. They do not exist until the matching phase is built.
+- **Manifests are not signed** (decision of 28 October 2026, §2.1). Diagrams and steps that still say
+  "sign", "signature", `.sig` or keyring describe the earlier design. Where they differ, §6.1 and §12.1
+  apply.
 
 ---
 
@@ -69,7 +72,7 @@ has tested and signed can be installed through the normal path.
 | R1 | Support fresh installations and existing appliances. |
 | R2 | Every update needs explicit approval by an authorised admin, bound to an exact manifest and host. |
 | R3 | Automatic rollback on failure, verified by health checks. |
-| R4 | Approved combinations are recorded in signed, immutable, version-controlled manifests. |
+| R4 | Approved combinations are recorded in immutable, version-controlled manifests. |
 | R5 | Updates are never forced. An admin may defer or decline; monitoring continues. |
 | R6 | Admin interface is a **command-line console menu** only (decision of 27 Oct 2026). |
 | R7 | Update notices for existing appliances go to the **real admin email held by PinPoint**. |
@@ -87,6 +90,11 @@ Decisions carried over from the 26 October handoff discussion:
 - Notices reuse the configured alert email transport (Gmail and its app password, when selected). No
   second app password is needed.
 - No forced-update policy has been authorised.
+- **No manifest signing** (28 October 2026). Nobody owns a signing key, so none is used. A manifest is
+  trusted because it sits in the root-only folder `/etc/pinpoint/updates/manifests/`. Its SHA-256 is
+  recorded the first time it is seen, and a later edit is refused. Every install still needs a named
+  admin's approval. Before the online catalog (Phase 4) downloads manifests, the university must decide
+  how a downloaded manifest is trusted: signing again, or a pinned catalog host and digest list.
 
 ### 2.2 Verified facts about the current installer
 
@@ -310,16 +318,21 @@ Manifests contain no secrets.
 
 Rules:
 
-- The signature is a detached `manifest.json.sig` made by a key in the appliance keyring.
+- Manifests are not signed (§2.1). A manifest is accepted only from `/etc/pinpoint/updates/manifests/`,
+  and the folder and file must be owned by root and writable by no one else. The file name must be
+  `<manifest_id>.json`. The SHA-256 of the exact bytes is recorded on first sight. A file whose bytes
+  later differ is refused and audited (`manifest.changed`), because a change needs a new manifest ID.
 - `build_profile` names a build recipe **shipped in the updater code**. Manifests never contain
   commands, so a manifest cannot run anything.
-- `url` hosts must be on the allowlist in `updater.conf`. The SHA-256 in the signed manifest is what
-  makes the file trusted; the URL only says where to fetch it.
+- `url` must be HTTPS, and (from Phase 4) its host must be on the allowlist in `updater.conf`. The
+  SHA-256 in the manifest is what makes the file trusted; the URL only says where to fetch it.
 - `compatibility.state` is one of `verified`, `conditional`, `untested`, `incompatible`, `deprecated`.
   Only `verified` and `conditional` can be installed. `conditional` shows its limitations and needs an
   extra confirmation.
-- Revocations are published in a signed `revoked.json` (manifest IDs and key fingerprints). A revoked
-  manifest becomes `deprecated` locally and any pending approval for it is voided.
+- Revocations are listed in `revoked.json` in the same folder
+  (`{"schema_version": 1, "manifest_ids": [...]}`). A revoked manifest becomes `deprecated` locally and
+  any pending approval for it is voided.
+- (Built in Phase 3: branch `feat/update-validation-approval`.)
 
 The catalog is a university-owned Git repository (`<PLACEHOLDER URL>`) published over HTTPS:
 
@@ -460,6 +473,11 @@ CREATE TABLE audit (                         -- append-only, hash-chained
   hash            TEXT NOT NULL              -- sha256(prev_hash || canonical row)
 );
 ```
+
+As built in Phase 3, the `manifest` table has no `signer_fpr` (manifests are not signed) and adds
+`revoked_at`, and `source` also allows `local` (the root-only folder). `audit` has a unique index on
+`prev_hash`, so two writers cannot fork the chain, and `audit --verify` also reports a gap in `seq`.
+The `evidence` and `notice` tables come with the phases that fill them (4 and 5).
 
 A plain JSON file is not used as the authoritative store: SQLite gives transactions, the unique
 "one active transaction" index and crash safety. Audit rows are also copied to
@@ -681,7 +699,8 @@ flowchart TD
 | `approve`, `schedule`, `defer`, `decline`, `cancel`, `recover` | **no** | yes |
 
 The program reads `SUDO_USER` and its groups. A direct root login is allowed for emergencies and is
-recorded as actor `root` with a warning in the audit row.
+recorded as actor `root` with a warning in the audit row. A sudo user in neither group is refused
+every command, and the refusal is audited (`auth.refused`).
 
 ### 8.4 CLI commands
 
@@ -706,6 +725,14 @@ JSON object (schema `pinpoint-update/v1`) so a future web UI can call it without
 
 Free-text fields (`--reason`) are limited to 500 printable characters and are stored, never executed
 or passed to a shell. No command accepts a URL, a path or a shell fragment.
+
+**Built in Phase 3:** `inventory`, `status`, `list`, `show`, `validate`, `approve`, `defer`, `decline`,
+`cancel`, `history` and `audit`, each with `--json`. `approve` also takes `--accept-limitations`, the
+CLI form of the second confirmation for a `conditional` manifest. A scheduled window must start in
+the future, be at least twice the expected downtime (update plus rollback), and end before the
+approval expires. `approve` records the approval and an `approved` transaction, but nothing runs it
+yet; the run timer and executor cutover are Phase 5. `discover` (Phase 4) and `recover` (Phase 5) are
+not built yet.
 
 ### 8.5 Exit codes and errors
 
@@ -987,9 +1014,9 @@ measures actual restore time so the agreed number is realistic.
 | Area | Control |
 |---|---|
 | Transport | HTTPS only; certificate validation through the system trust store; no redirects to non-allowlisted hosts; timeouts and size limits |
-| Manifest trust | Detached GPG signature verified with `gpgv --keyring /etc/pinpoint/updates/trusted-keys.gpg`; unsigned or unknown-key manifests are BLOCKED |
-| Artifact trust | SHA-256 from the signed manifest; checked on download and again by the executor before use |
-| Keys | Release key held by `<PLACEHOLDER custodian>`, offline or on a hardware token, not on any appliance or personal account. Keyring may hold two keys during rotation. Revocation through signed `revoked.json`, and a new keyring shipped with the next installer and updater release |
+| Manifest trust | No signatures (§2.1). Accepted only from the root-only manifest folder (folder and file owned by root, not group- or world-writable); SHA-256 recorded on first sight; a changed file is refused and audited. To be revisited before the online catalog (Phase 4) |
+| Artifact trust | SHA-256 from the manifest; checked on download and again by the executor before use |
+| Keys | None while manifests are unsigned. Revocation through `revoked.json` in the root-only folder |
 | Allowlist | `updater.conf` lists allowed hosts (for example `assets.nagios.com`, `nagios-plugins.org`, `<PLACEHOLDER catalog host>`, optional `<PLACEHOLDER mirror>`) |
 | Extraction | Python `tarfile` with the `data` filter (or equivalent checks): no absolute paths, no `..`, no links outside the target, no device files, size limits |
 | Least privilege | Downloads and builds run as `pinpoint-updater`; executor reaches only 127.0.0.1 (the health suite reads the Nagios CGIs there); notify helper takes only an ID |
@@ -1078,7 +1105,7 @@ critical checks. HC-14 is checked by `pinpoint-update-exec verify`.
 | ID | Injected fault | Expected result |
 |---|---|---|
 | FI-01 | Tarball digest mismatch | BLOCKED before any change |
-| FI-02 | Manifest signed by unknown key | BLOCKED |
+| FI-02 | Manifest edited after it was recorded, or not owned by root, or writable by others (replaces "signed by unknown key") | Refused; not installable |
 | FI-03 | Revoked manifest after approval | Approval revoked; transaction refuses to start |
 | FI-04 | Insufficient disk | PREFLIGHT_FAILED; nothing changed |
 | FI-05 | Build failure | Failed; active install untouched |
@@ -1143,7 +1170,7 @@ Emails never include passwords, tokens, or links that perform actions.
 | AC-01 | Fresh install reproduces the approved baseline: installed hashes equal the manifest | UPD-F01, UPD-F02 |
 | AC-02 | No update installs without a valid approval | UT-APR-*, UPD-E03 |
 | AC-03 | Approval is bound to manifest digest, host and source state; a change voids it | UT-APR-INV-*, FI-03 |
-| AC-04 | Untested, incompatible, revoked or unsigned manifests are refused by the program, not just hidden | UT-GATE-*, FI-02, FI-03 |
+| AC-04 | Untested, incompatible, revoked, edited or untrusted manifests are refused by the program, not just hidden | UT-GATE-*, FI-02, FI-03 |
 | AC-05 | Artifacts are verified before use, twice | FI-01, FI-14 |
 | AC-06 | Concurrent transactions and app deploys are refused | FI-13 |
 | AC-07 | Preflight failure changes nothing (tree hash identical before and after) | FI-04, FI-05 |
@@ -1194,6 +1221,10 @@ gantt
     section Handoff
     Phase 6 Pilot and handoff    :p6, after p5, 21d
 ```
+
+Status: Phases 1 and 2 are built (branches `feat/verified-nagios-baseline` and
+`feat/nagios-recovery-foundation`). Phase 3 is built on `feat/update-validation-approval`: unit tests in
+`tests/test_pinpoint_update_approval.py`, VM runner `tests/update-approval-tests.sh`.
 
 **Total: about 14–18 weeks** with Phases 1 and 2 in parallel (two people), or about 18–22 weeks for
 one person. Phase 2 can start as soon as the database layout from Phase 1 is fixed. The notification
@@ -1291,7 +1322,7 @@ stale, and escalate. Upstream releases are never approved silently.
 | ID | Question | Affects | Discovery task | Needed by |
 |---|---|---|---|---|
 | B1 | Recovery-time objective and maximum downtime | §11, window length | Agree with university IT; measure in Phase 2 drill | Phase 5 |
-| B2 | Catalog host and signing-key custodians | §6.1, §12 | University chooses Git host and two custodians | Phase 1 |
+| B2 | Catalog host, and how a downloaded manifest is trusted (signing was dropped on 28 Oct 2026) | §6.1, §12 | University chooses Git host and a trust mechanism | Phase 4 |
 | B3 | Outbound proxy needed? | Fetch step | Ask university network team | Phase 1 |
 | B4 | Named owners and transition end date | §18 | Handoff meeting | Phase 0 |
 | B5 | Hypervisor snapshots available? | Extra recovery layer | Ask hosting team | Phase 2 |

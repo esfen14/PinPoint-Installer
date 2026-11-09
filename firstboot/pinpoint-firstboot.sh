@@ -38,6 +38,14 @@ echo "[9/9] Configuring log limits..." | tee -a "$LOG"
 /root/pinpoint/configure-journald-logs.sh
 
 echo "PinPoint installation completed successfully." | tee -a "$LOG"
+
+# Marker checked by pinpoint-firstboot.service (ConditionPathExists),
+# so the installer never runs again on a later boot. Written only
+# here: a failed install has no marker and is retried at next boot.
+mkdir -p /var/lib/pinpoint
+touch /var/lib/pinpoint/firstboot-done
+chmod 644 /var/lib/pinpoint/firstboot-done
+
 echo "Web administrator credentials will be shown at the next login." | tee -a "$LOG"
 echo "Disabling PinPoint First Boot service..." | tee -a "$LOG"
 systemctl disable pinpoint-firstboot.service

@@ -2,6 +2,9 @@
 Description=PinPoint First Boot Installer
 After=network-online.target
 Wants=network-online.target
+# Run once. getty@tty1 also pulls this unit in (getty-tty1.conf),
+# so "systemctl disable" alone does not stop it on later boots.
+ConditionPathExists=!/var/lib/pinpoint/firstboot-done
 
 [Service]
 Type=oneshot

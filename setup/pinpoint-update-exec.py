@@ -49,27 +49,10 @@ HEALTH_TIMEOUT = 900
 OK, NOT_AUTHORISED, BUSY, INVALID_TRANSITION, PREFLIGHT_FAILED = 0, 3, 5, 6, 8
 ROLLED_BACK, RECOVERY_FAILED, DRILL_FAULT_MISSED = 10, 11, 12
 
-ACTIVE = ('approved', 'preparing', 'staging', 'applying', 'health_check', 'rolling_back')
-# Plan section 7.1. preparing -> failed is only used by reconcile, for a
-# transaction that stopped before anything was touched.
-TRANSITIONS = {
-    'approved': ('preparing', 'cancelled', 'missed_window'),
-    'preparing': ('blocked', 'staging', 'failed'),
-    'staging': ('cancelled', 'failed', 'applying'),
-    'applying': ('health_check', 'rolling_back'),
-    'health_check': ('succeeded', 'rolling_back'),
-    'rolling_back': ('rolled_back', 'recovery_failed'),
-}
-TXN_FIELDS = ('step', 'recovery_point_id', 'failure_code', 'recovery_status', 'started_at', 'finished_at',
-              'downtime_seconds')
 FAULTS = ('config', 'service', 'plugin', 'corrupt')
 DRILL_FAULT_LINE = 'pinpoint_drill_invalid_directive=1\n'
 
 pu = None  # the controller module, loaded in main()
-
-
-class InvalidTransition(Exception):
-    pass
 
 
 class RecoveryError(Exception):
@@ -77,7 +60,7 @@ class RecoveryError(Exception):
 
 
 def load_controller(path=None):
-    """The controller (pinpoint-update) owns the database schema and the audit chain."""
+    """The controller (pinpoint-update) owns the database schema, the transitions and the audit chain."""
     loader = importlib.machinery.SourceFileLoader('pinpoint_update', str(path or CONTROLLER))
     module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
     loader.exec_module(module)
@@ -147,7 +130,7 @@ def take_lock():
 ##################################################
 
 def new_txn(store, kind, source, target):
-    txn_id = 'txn-%s-%s' % (time.strftime('%Y%m%d%H%M%S', time.gmtime()), os.urandom(3).hex())
+    txn_id = pu.make_id('txn')
     with store.db:
         store.db.execute('INSERT INTO txn (txn_id, kind, host_id, source_manifest_id, target_manifest_id, state, '
                          'created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -157,9 +140,7 @@ def new_txn(store, kind, source, target):
 
 
 def active_txn(store):
-    marks = ','.join('?' * len(ACTIVE))
-    return store.db.execute('SELECT txn_id, state, step, recovery_point_id FROM txn WHERE host_id = ? '
-                            'AND state IN (%s)' % marks, (pu.host_id(), *ACTIVE)).fetchone()
+    return pu.active_txn(store)
 
 
 def txn_state(store, txn_id):
@@ -169,7 +150,7 @@ def txn_state(store, txn_id):
 
 def update_txn(store, txn_id, who='executor', **fields):
     """Record a sub-step or field without changing state; the step is written before it runs."""
-    unknown = set(fields) - set(TXN_FIELDS)
+    unknown = set(fields) - set(pu.TXN_FIELDS)
     if unknown:
         raise ValueError('unknown txn fields: %s' % ', '.join(sorted(unknown)))
     with store.db:
@@ -179,20 +160,8 @@ def update_txn(store, txn_id, who='executor', **fields):
 
 
 def transition(store, txn_id, to, who='executor', **fields):
-    """The only way a transaction changes state: checked against plan 7.1, audited in the same commit."""
-    unknown = set(fields) - set(TXN_FIELDS)
-    if unknown:
-        raise ValueError('unknown txn fields: %s' % ', '.join(sorted(unknown)))
-    with store.db:
-        row = store.db.execute('SELECT state FROM txn WHERE txn_id = ?', (txn_id,)).fetchone()
-        if row is None or to not in TRANSITIONS.get(row[0], ()):
-            raise InvalidTransition('%s: %s -> %s' % (txn_id, row[0] if row else 'missing', to))
-        if to not in ACTIVE:
-            fields.setdefault('finished_at', pu.now())
-        values = {'state': to, **fields}
-        store.db.execute('UPDATE txn SET %s WHERE txn_id = ?' % ', '.join('%s = ?' % k for k in values),
-                         (*values.values(), txn_id))
-        store.audit('txn.' + to, {'from': row[0], **fields}, txn_id=txn_id, who=who)
+    """State changes go through the controller's transition(), the one function plan 7.1 allows."""
+    pu.transition(store, txn_id, to, who, **fields)
 
 
 def workdir(txn_id):
@@ -271,7 +240,7 @@ def describe(path):
 
 def create_recovery_point(store, txn_id):
     """Copy the stopped Nagios tree and the extra files, then prove the copy equals the original."""
-    rp_id = 'rp-%s-%s' % (time.strftime('%Y%m%d%H%M%S', time.gmtime()), os.urandom(3).hex())
+    rp_id = pu.make_id('rp')
     RP_ROOT.mkdir(mode=0o700, exist_ok=True)
     os.chmod(RP_ROOT, 0o700)
     rp = RP_ROOT / rp_id
@@ -482,8 +451,13 @@ def drill(store, fault=None, crash_after_apply=False):
     if lock is None:
         say('BUSY: another update, drill or PinPoint web deployment is running.')
         return BUSY
-    if active_txn(store):
-        say('BUSY: transaction %s is not finished. Run: pinpoint-update-exec reconcile' % active_txn(store)[0])
+    busy = active_txn(store)
+    if busy and busy[1] == 'approved':
+        say('BUSY: approved update %s is waiting to run. Cancel it first: pinpoint-update cancel %s'
+            % (busy[0], busy[0]))
+        return BUSY
+    if busy:
+        say('BUSY: transaction %s is not finished. Run: pinpoint-update-exec reconcile' % busy[0])
         return BUSY
     txn_id = new_txn(store, 'drill', source, source)
     context = {'version': found['nagios-core']['version'], 'ncpa_sha256': found['check-ncpa']['sha256'],
@@ -596,7 +570,7 @@ def reconcile(store, mode):
         say('Marked failed: it stopped before anything was changed.')
         return OK
     if state == 'approved':
-        return OK  # no approvals before Phase 3
+        return OK  # nothing was touched; the run timer (a later phase) starts or expires it
     if state in ('applying', 'health_check'):
         transition(store, txn_id, 'rolling_back', who, failure_code='INTERRUPTED')
     return rollback(store, txn_id, rp_id, at_boot=(mode == 'boot'), who=who) or OK
@@ -644,7 +618,7 @@ def main(argv=None):
                 broken += not good
                 print('%s %s' % (rp_id, 'verified' if good else 'DOES NOT VERIFY'))
         return OK if not broken else RECOVERY_FAILED
-    except InvalidTransition as error:
+    except pu.InvalidTransition as error:
         say('Invalid transition: %s' % error)
         return INVALID_TRANSITION
     finally:

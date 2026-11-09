@@ -9,7 +9,9 @@ SNMP, or web server setup.
 
 - Ubuntu Server 22.04.5 LTS
 - Nagios Core 4.5.11
-- Official Nagios Plugins
+- Official Nagios Plugins 2.4.12 and the NCPA `check_ncpa.py` plugin
+  (versions and SHA-256 fixed in `setup/manifests/pp-mon-baseline-1.json`; a download that does not
+  match is refused)
 - SNMP
 - PinPoint Management System (Network-Diagnosis-System web interface, served by Nginx and Gunicorn)
 
@@ -87,6 +89,27 @@ minutes). The installer makes sure Nagios counts in minutes (`interval_length=60
 PinPoint may reload Nagios but not restart it, and that the database has the setting after an
 upgrade. See [docs/Check-Interval.md](docs/Check-Interval.md) for what each interval means and
 how to check a server.
+
+## Nagios versions and the Update Manager
+
+`sudo pinpoint-update` opens the PinPoint Update Manager, a numbered console menu:
+
+```text
+   1) Reload (check for updates)
+   2) Install updates
+   3) Choose what to update
+   4) Exit
+```
+
+This version is read-only. It shows the installed Nagios Core, Nagios Plugins and
+`check_ncpa.py` next to the baseline manifest and records them in
+`/var/lib/pinpoint/updates/updates.db`. There is no update catalog yet, so Reload shows
+the update status as UNKNOWN, and options 2 and 3 install nothing. After a fresh install
+the menu opens once at the first console login, after the web credentials. On an existing
+appliance, install it with `sudo bash /root/pinpoint/configure-monitoring-updates.sh`; no
+menu opens by itself there. Other commands: `sudo pinpoint-update status [--json]` and
+`sudo pinpoint-update audit --verify`. The full design is in
+`docs/University-Maintenance-and-Updates-Plan.md`.
 
 ## Updating Network-Diagnosis-System
 
